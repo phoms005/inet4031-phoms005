@@ -1,2 +1,8 @@
-week-3/app/.env
-week-4/.env
+# OpenTofu local files
+**/.terraform/
+**/terraform.tfstate
+**/terraform.tfstate.*
+**/terraform.tfvars
+**/*.tfvars
+# Environment secrets
+**/.env
