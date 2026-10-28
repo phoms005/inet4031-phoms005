@@ -1,4 +1,3 @@
-
 #!/usr/bin/env bash
 # Pull-based deploy. If origin/master has a commit this VM has not deployed yet,
 # and the deploy gate on GitHub passed for that exact commit, bring this folder
@@ -70,7 +69,7 @@ if ! kubectl get nodes >/dev/null 2>&1; then
   exit 0
 fi
 
-# The guard: refuse to deploy from a folder in the wrong state.
+# Refuse to deploy from a folder in the wrong state.
 branch="$(git rev-parse --abbrev-ref HEAD)"
 if [ "$branch" != "master" ]; then
   log "SKIPPED: this folder is on '$branch', not master"
@@ -90,10 +89,26 @@ fi
 
 log "deploying ${NEW:0:7}"
 
-log "step 1 of 2: tofu apply in week-5"
-(cd week-5 && tofu init -input=false && tofu apply -auto-approve -input=false -lock-timeout=60s)
+# Files created from here on, including the saved plan, are private to you.
+umask 077
+PLAN="$HOME/.deploy.tfplan"
+trap 'rm -f "$PLAN"' EXIT
 
-log "step 2 of 2: helm upgrade for prometheus"
+log "step 1 of 3: tofu plan in week-5"
+(cd week-5 && tofu init -input=false -no-color && tofu plan -input=false -no-color -lock-timeout=60s -out="$PLAN")
+
+# Stop if the plan would delete or replace anything.
+destroys="$(cd week-5 && tofu show -no-color "$PLAN" | grep -cE 'will be destroyed|must be replaced' || true)"
+if [ "$destroys" != "0" ]; then
+  log "BLOCKED: this plan would delete or replace $destroys resource(s), so a person has to approve it."
+  log "Read it with 'cd week-5 && tofu plan'. If it is intended, run 'tofu apply' there, and the next run carries on."
+  exit 1
+fi
+
+log "step 2 of 3: tofu apply the saved plan"
+(cd week-5 && tofu apply -input=false -no-color -lock-timeout=60s "$PLAN")
+
+log "step 3 of 3: helm upgrade for prometheus"
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts --force-update
 helm repo update prometheus-community
 helm upgrade --install prometheus prometheus-community/prometheus \
